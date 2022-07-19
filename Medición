@@ -1,0 +1,375 @@
+from Tkinter import *
+from numpy import savetxt
+import ttk
+import time
+import tkMessageBox
+import numpy as np
+import math
+import socket
+import os
+import RPi.GPIO as GPIO
+
+UDP_IP = "127.0.0.1"
+UDP_PORT = 5005
+
+sock = socket.socket(socket.AF_INET, # Internet
+                     socket.SOCK_DGRAM) # UDP
+sock.bind((UDP_IP, UDP_PORT))
+#State=True
+
+global count, p, pf, ex, s1, v1, co, co1, co2, co3, co4, co5, co6, co7, dco, vsp1, vri, vrii, vriii
+count = 0
+p=-1
+v1=2
+dco=0
+vsp1 = []
+vri = 1
+vrii = 1
+vriii = 1
+
+def estado():
+    global pf, lmx
+    g = selec.get()
+
+    if g == 1:
+        pf = 450
+        lmx = 115
+        print pf
+
+    elif g == 2:
+        pf = 900
+        lmx = 110
+        print pf
+
+    elif g == 3:
+        pf = 1800
+        lmx = 105
+        print pf
+
+    elif g == 4:
+        pf = 3600
+        lmx = 100
+        print pf
+
+    elif g == 5:
+        pf = 7200
+        lmx = 95
+        print pf
+
+    elif g == 6:
+        pf = 14400
+        lmx = 90
+        print pf
+
+    elif g == 7:
+        pf = 28800
+        lmx = 85
+        print pf
+
+def reset():
+    global count, p, v1, vsp1, dco, tir, vri, vrii, vriii
+    count = 1
+    t.set('00:00:00')
+    p=-1
+    count = 0
+    v1 = 2
+    vsp1 = []
+    dco = 0
+    tir = 0
+    S1 = 0
+    vri = 1
+    vrii = 1
+    vriii = 1
+
+def start():
+    global count, p, v1, s1
+    #time.sleep(1)
+    count = 0
+    nplay()
+    start_timer()
+
+def start_timer():
+    global count, p, pf, v1, s1, dco, vsp1, vsp2, lmx, tir, s1, vri, vrii, vriii
+
+    datos()
+    timer()
+
+    p=p+1
+    dco=dco+1
+    #print(s1)
+    #print dco
+
+    vspds = 0.00002 * (10 ** (s1 / float(20)))
+    vsp = 0.00002 * (10 ** (s1 / float(20)))
+    vsp = vsp ** 2
+    vsp1.append(vsp)
+    vsp2 = np.array(vsp1)
+    #print(vsp2)
+    vsp2 = np.sum(vsp1, axis=0)
+    #print(vsp2)
+    vsp3 = math.sqrt(vsp2 / float(dco))
+    #print vsp3
+    vspt = ((p * vsp3) / (float((0.00002) * pf * (10 ** (lmx / float(20)))))) * 100
+    #print vspt
+    progress.set(vspt)
+    vsptt = int(vspt)
+    pr.set(vsptt)
+    vspttd = vsptt / float(100)
+
+    vspp3 = int(10 * (math.log10(vsp3 / (p * ((0.00002) ** 2)))))
+
+    #nvsp = math.sqrt(vsp/ float(dco))
+    #nvsp3 = p * nvsp # Para empezar a calcular el Leq, variable numerador que da en pascales
+    #nvps31 = int(20 * (math.log10(nvsp3/(float(0.00002)))))
+    nvl.set(vspp3)
+
+    if pf-1 == p:
+        stop()
+
+    tir = (((1 - vspttd) * pf * 0.00002 * (10 ** (lmx / float(20)))) / float(vspds))
+    tir1 = int(tir)
+    #print tir1
+
+    tirb = tir1 / (60)
+    tirc = tir1 % (60)
+    tird = tirb % (60)
+    tire = tirb / (60)
+
+    # print tirc
+    # print tird
+    # print tire
+
+    if s1 >= 85:
+        prs.set(tirc)
+        prm.set(tird)
+        prh.set(tire)
+        
+    s11.set(s1)
+
+    if s1 < 85:
+        prs.set("00")
+        prm.set("00")
+        prh.set("00")
+
+    if vsptt == 90:
+        if vri == 1:
+            vri=0
+            GPIO.setmode(GPIO.BCM)
+            GPIO.setup(26,GPIO.OUT)
+            GPIO.output(26,True)
+            print(tkMessageBox.showwarning(title="Alerta", message="Alerta de ruido - " + "Completado el 80% de EXPOSICION"))
+            GPIO.output(26,False)
+
+    if vsptt == 95:
+        if vrii == 1:
+            vrii=0
+            GPIO.setmode(GPIO.BCM)
+            GPIO.setup(26,GPIO.OUT)
+            GPIO.output(26,True)
+            print(tkMessageBox.showwarning(title="Alerta", message="Alerta de ruido - " + "Completado el 90% de EXPOSICION"))
+            GPIO.output(26,False)
+            
+    if vsptt == 100:
+        if vriii == 1:
+            vriii=0
+            GPIO.setmode(GPIO.BCM)
+            GPIO.setup(26,GPIO.OUT)
+            GPIO.output(26,True)
+            print(tkMessageBox.showwarning(title="Alerta", message="Alerta de ruido - " + "Completado el 100% de EXPOSICION"))
+            GPIO.output(26,False)
+
+            
+def stop():
+    global count
+    count = 1
+    nplay1()
+
+def timer():
+    global count
+    if (count == 0):
+        d = str(t.get())
+        h, m, s = map(int, d.split(":"))
+
+        h = int(h)
+        m = int(m)
+        s = int(s)
+
+        if (s < 59):
+            s += 1
+        elif (s == 59):
+            s = 0
+
+            if (m < 59):
+                m += 1
+            elif (m == 59):
+                m = 0
+
+                if (h < 23):
+                    h += 1
+                elif (h == 23):
+                    h = 0
+
+        if (h < 10):
+            h = str(0) + str(h)
+        else:
+            h = str(h)
+
+        if (m < 10):
+            m = str(0) + str(m)
+        else:
+            m = str(m)
+
+        if (s < 10):
+            s = str(0) + str(s)
+        else:
+            s = str(s)
+
+        d = h + ":" + m + ":" + s
+
+        t.set(d)
+        if (count == 0):
+            root.after(960, start_timer)
+
+def expo():
+    global vsp2, vsp1
+    #print vsp1
+    #print vsp2
+    savetxt('/home/pi/Desktop/medicion.csv', vsp1, fmt='%1.7f', delimiter=';')
+    #df = pd.DataFrame(vsp2, columns = ['c1', 'c2'])
+    #path = '/home/pi/Desktop/*.xlsx'
+    #df.to_excel(patch_out, index = False)
+
+    print('fin')
+    
+
+##def eduard(event):
+##    global s1, v1, count, co, co1, co2, co3, co4, co5, co6, co7
+##    s1 = valor.get()
+
+def datos():
+    global s1
+    data, addr = sock.recvfrom(1024)
+    newData = str(data).split(';')
+    Data=str(newData[0])
+    Data=int(Data)
+    s1 = Data
+    #print(s1)
+    if s1 >= 105:
+        s1 = s1+7
+
+def nplay():
+    nply=1
+    #print(nply)
+    os.system("echo '0 " + str(nply) + ";' | pdsend 5001 localhost udp")
+
+def nplay1():
+    nply1=1
+    #print(nply1)
+    os.system("echo '1 " + str(nply1) + ";' | pdsend 5001 localhost udp")
+
+
+root = Tk()
+root.title("Medidor de exposicion sonora")
+root.geometry("475x280")
+root.resizable(False, False)
+t = StringVar()
+t.set("00:00:00")
+lb = Label(root, textvariable=t)
+lb.config(font=("Arial 40"))
+bt1 = Button(root, text="Start", command=start, font=("Arial 12"))
+bt2 = Button(root, text="Stop", command=stop, font=("Arial 12"))
+bt3 = Button(root, text="Reset", command=reset, font=("Arial 12"))
+bt4 = Button(root, text="D", command=expo, font=("Arial 12"))
+lb.place(x=160, y=50)
+bt1.place(x=140, y=110)
+bt2.place(x=210, y=110)
+bt3.place(x=280, y=110)
+bt4.place(x=360, y=110)
+
+lblanime=Label(root,text="H. a trabajar", font=("Arial 12")).place(x=20,y=20)
+
+lblanime=Label(root,text="Tiempo", font=("Arial 12")).place(x=235,y=20)
+lblanime=Label(root,text="H", font=("Arial 10")).place(x=185,y=40)
+lblanime=Label(root,text="M", font=("Arial 10")).place(x=257,y=40)
+lblanime=Label(root,text="S", font=("Arial 10")).place(x=331,y=40)
+
+selec=IntVar()
+rdbanimoE=Radiobutton(root,text="1/8 Hora",value=1,variable=selec,command=estado).place(x=20,y=50)
+rdbanimoMB=Radiobutton(root,text="1/4 Hora",value=2,variable=selec,command=estado).place(x=20,y=68)
+rdbanimoB=Radiobutton(root,text="1/2 Hora",value=3,variable=selec,command=estado).place(x=20,y=86)
+rdbanimoM=Radiobutton(root,text="1 Hora",value=4,variable=selec,command=estado).place(x=20,y=104)
+rdbanimoP=Radiobutton(root,text="2 Horas",value=5,variable=selec,command=estado).place(x=20,y=122)
+rdbanimoM1=Radiobutton(root,text="4 Horas",value=6,variable=selec,command=estado).place(x=20,y=140)
+rdbanimoP1=Radiobutton(root,text="8 Horas",value=7,variable=selec,command=estado).place(x=20,y=158)
+
+lblexpo=Label(root,text="1/8 115 dBA", font=("Arial 10")).place(x=20,y=190)
+lblexpo=Label(root,text="1/4 110 dBA", font=("Arial 10")).place(x=20,y=210)
+lblexpo=Label(root,text="1/2 105 dBA", font=("Arial 10")).place(x=20,y=230)
+lblexpo=Label(root,text="1 h 100 dBA", font=("Arial 10")).place(x=20,y=250)
+lblexpo=Label(root,text="2 hs 95 dBA", font=("Arial 10")).place(x=110,y=210)
+lblexpo=Label(root,text="4 hs 90 dBA", font=("Arial 10")).place(x=110,y=230)
+lblexpo=Label(root,text="8 hs 85 dBA", font=("Arial 10")).place(x=110,y=250)
+
+##valor=IntVar()
+##sldbarra1=Scale(root,label="Prueba Leq", orient=HORIZONTAL,length=350,width=25,from_=50,to=120,tickinterval=10, variable=valor, command=eduard).place(x=30,y=370)
+
+progress = IntVar()
+progressbar = ttk.Progressbar(orient=VERTICAL, length=210, mode='determinate', variable=progress)
+progressbar.pack(side="bottom")
+#progressbar.step(s1)
+progressbar.place(x=420,y=50, width=25)
+progressbar["maximum"] = 100
+
+lblexpo=Label(root,text="Tiempo a llegar al 100% de EXP", font=("Arial 10")).place(x=170,y=155)
+
+prs = StringVar()
+prs.set("00")
+lbs = Label(root, textvariable=prs)
+lbs.config(font=("Arial 18"))
+lbs.place(x=281,y=175)
+
+lblexpo=Label(root,text=":", font=("Arial 18")).place(x=271,y=175)
+
+prm = StringVar()
+prm.set("00")
+lbm = Label(root, textvariable=prm)
+lbm.config(font=("Arial 18"))
+lbm.place(x=242,y=175)
+
+lblexpo=Label(root,text=":", font=("Arial 18")).place(x=232,y=175)
+
+prh = StringVar()
+prh.set("00")
+lbh = Label(root, textvariable=prh)
+lbh.config(font=("Arial 18"))
+lbh.place(x=203,y=175)
+
+lblexpo=Label(root,text="dB", font=("Arial 12")).place(x=205,y=223)
+
+s11 = StringVar()
+s11.set("000")
+lbs1 = Label(root, textvariable=s11)
+lbs1.config(font=("Arial 38"))
+lbs1.place(x=230,y=215)
+
+lblanime=Label(root,text="H", font=("Arial 8")).place(x=212,y=200)
+lblanime=Label(root,text="M", font=("Arial 8")).place(x=251,y=200)
+lblanime=Label(root,text="S", font=("Arial 8")).place(x=290,y=200)
+
+lblexpo=Label(root,text="Leq", font=("Arial 12")).place(x=316,y=223)
+
+nvl = StringVar()
+nvl.set("000")
+lnvl = Label(root, textvariable=nvl)
+lnvl.config(font=("Arial 26"))
+lnvl.place(x=348,y=215)
+
+pr = StringVar()
+pr.set("000")
+lb = Label(root, textvariable=pr)
+lb.config(font=("Arial 20"))
+lb.place(x=412,y=15)
+
+lblpor=Label(root,text="%", font=("Arial 20")).place(x=384,y=15)
+
+root.mainloop()
